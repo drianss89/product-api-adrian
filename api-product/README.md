@@ -45,24 +45,16 @@ Ini akan membuat:
 npm run migrate
 ```
 
-Perintah ini aman dijalankan berulang kali (idempotent). File SQL di `migrations/` dijalankan urut dan di-track agar tidak diulang.
-
 ### 5. Seed Data (opsional)
 
 ```bash
 npm run seed
 ```
 
-Menambah 2 produk dengan variasi untuk development.
-
 ### 6. Jalankan Aplikasi
 
 ```bash
-# Development (dengan auto-reload)
 npm run dev
-
-# Production
-npm start
 ```
 
 Server berjalan di `http://localhost:3000`.
@@ -94,11 +86,11 @@ Server berjalan di `http://localhost:3000`.
 | GET | `/api-docs` | Swagger UI | HTML |
 | GET | `/openapi.json` | Dokumen OpenAPI 3.1 | JSON |
 
+Endpoint baseline yang digunakan frontend: `GET /api/products/:id` dan `GET /api/products`.
+
 ---
 
 ## Swagger UI
-
-Buka di browser setelah server berjalan:
 
 ```
 http://localhost:3000/api-docs
@@ -138,16 +130,7 @@ http://localhost:3000/api-docs
 ```bash
 curl -X POST http://localhost:3000/api/products \
   -H "Content-Type: application/json" \
-  -d '{
-    "name": "Kaos Katun Polos",
-    "price": 150000,
-    "image": "https://example.com/kaos.png",
-    "variants": {
-      "colorOrSize": ["S", "M", "L"],
-      "quantity": 10
-    },
-    "description": "Kaos katun nyaman untuk sehari hari."
-  }'
+  -d '{"name":"Kaos Katun Polos","price":150000,"image":"https://example.com/kaos.png","variants":{"colorOrSize":["S","M","L"],"quantity":10},"description":"Kaos katun nyaman."}'
 ```
 
 **GET /api/products/1**
@@ -155,59 +138,18 @@ curl -X POST http://localhost:3000/api/products \
 curl http://localhost:3000/api/products/1
 ```
 
-**PUT /api/products/1**
-```bash
-curl -X PUT http://localhost:3000/api/products/1 \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "Kaos Premium",
-    "price": 250000,
-    "image": "https://example.com/premium.png",
-    "variants": {
-      "colorOrSize": ["M", "L", "XL"],
-      "quantity": 20
-    },
-    "description": "Kaos premium bahan halus."
-  }'
-```
-
-**DELETE /api/products/1**
-```bash
-curl -X DELETE http://localhost:3000/api/products/1
-```
-
 ---
 
 ## Testing
 
-### Unit Test (tanpa database)
-
 ```bash
 npm run test:unit
-```
-
-### Integration Test (membutuhkan Docker PostgreSQL)
-
-Pastikan container `product_api_postgres_test` berjalan di port 5433.
-
-```bash
-# Ubah DATABASE_TEST_URL di .env jika menggunakan port berbeda
-DATABASE_TEST_URL=postgresql://app_user:change-me@localhost:5433/product_api_test
-
 npm run test:integration
-```
-
-### Semua Test
-
-```bash
 npm test
-```
-
-### Coverage
-
-```bash
 npm run test:coverage
 ```
+
+Integration test membutuhkan container `product_api_postgres_test` di port 5433.
 
 ---
 
@@ -215,41 +157,144 @@ npm run test:coverage
 
 ```
 src/
-  app.js                    # Konfigurasi Express dan middleware global
-  server.js                 # Entry point HTTP server
+  app.js
+  server.js
   config/
-    env.js                  # Validasi environment variable
-    database.js             # PostgreSQL connection pool
+    env.js
+    database.js
   routes/
-    product.routes.js       # 5 endpoint produk
-    docs.routes.js          # Swagger UI dan /openapi.json
+    product.routes.js
+    docs.routes.js
   controllers/
-    product.controller.js   # HTTP request/response
+    product.controller.js
   services/
-    product.service.js      # Logika bisnis dan transaksi
+    product.service.js
   repositories/
-    product.repository.js   # Query SQL berparameter
+    product.repository.js
   schemas/
-    product.schema.js       # Zod schema validasi body
+    product.schema.js
   middlewares/
-    validate-id.js          # Validasi parameter :id
-    validate-request.js     # Validasi body POST/PUT
-    not-found.js            # Handler route tidak ditemukan
-    error-handler.js        # RFC 9457 Problem Details
+    validate-id.js
+    validate-request.js
+    not-found.js
+    error-handler.js
   errors/
-    app-error.js            # Class error terstruktur
+    app-error.js
   utils/
-    product-response.js     # Mapper DB -> API response
+    product-response.js
 migrations/
-  001_create_products.sql
-  002_create_product_variants.sql
-  003_updated_at_trigger.sql
 scripts/
-  migrate.js                # Runner migrasi
-  seed.js                   # Seed data development
 tests/
-  unit/                     # Unit test tanpa DB
-  integration/              # Integration test dengan DB
-openapi.yaml                # Sumber OpenAPI 3.1
-docker-compose.yml          # Docker PostgreSQL dev + test
+  unit/
+  integration/
+openapi.yaml
+docker-compose.yml
 ```
+
+---
+
+## Frontend
+
+Dua halaman detail produk tersedia di folder `../project-AI/`:
+
+### Perbedaan Halaman Hardcoded vs API-Driven
+
+| Aspek | Halaman 1 — Hardcoded | Halaman 2 — API-Driven |
+|---|---|---|
+| Lokasi | `project-AI/index.html` + `script.js` | `project-AI/frontend/` (Vite app) |
+| Sumber data | Objek `PRODUCT` statis di `script.js` | `GET http://localhost:3000/api/products/:id` |
+| Produk | Essential Hoodie — Rp289.000 | Sesuai data di database (default ID 1) |
+| Loading state | Tidak ada (data langsung tersedia) | Tampil saat fetch berlangsung |
+| Error handling | Tidak diperlukan | Error state + tombol Retry |
+| Render | Synchronous saat DOM siap | Async fetch → render setelah response |
+
+### Fitur Interaksi (Berlaku di Kedua Halaman)
+
+- **Variant Selection** — klik varian memperbarui status aktif dan menghitung ulang subtotal.
+- **Quantity Control** — tombol `+`/`−` mengubah jumlah. Tombol `−` disabled di angka 1, tombol `+` disabled di angka maksimum stok.
+- **Subtotal Otomatis** — `Subtotal = Harga × Quantity`, diperbarui via `textContent` setiap perubahan.
+- **Validasi Quantity** — menolak nilai bukan bilangan bulat, < 1, atau > stok. Pesan error ditampilkan via `textContent`.
+- **Add to Cart** — validasi dulu, lalu perbarui cart counter lokal dan tampilkan feedback nama + variasi + jumlah.
+
+### Aturan Validasi Quantity
+
+| Input | Hasil |
+|---|---|
+| Bilangan bulat, 1 ≤ qty ≤ stok | Valid, subtotal dihitung |
+| `0` atau negatif | Ditolak — "Jumlah harus minimal 1." |
+| Desimal (`1.5`) | Ditolak — "Jumlah harus berupa bilangan bulat." |
+| Melebihi stok | Ditolak — "Jumlah melebihi stok (N)." |
+
+### Mekanisme Error Handling — Halaman 2
+
+1. Saat fetch dimulai → loading state ditampilkan.
+2. `response.ok` diperiksa sebelum `response.json()`.
+3. Jika request gagal → loading dihilangkan, error state tampil dengan pesan yang sesuai.
+4. Tombol **Retry** tersedia; listener dipasang dengan `{ once: true }` sehingga tidak duplikat meski diklik berkali-kali.
+5. Setiap Retry menggunakan `AbortController` baru, membatalkan request sebelumnya jika masih berjalan.
+
+---
+
+## Cara Menjalankan Frontend
+
+### Halaman 1 — Hardcoded
+
+Buka langsung di browser — tidak memerlukan server:
+
+```
+project-AI/index.html
+```
+
+Atau gunakan Live Server extension di VS Code.
+
+### Halaman 2 — API-Driven
+
+Pastikan API berjalan terlebih dahulu, lalu:
+
+```bash
+# Di folder project-AI/frontend/
+npm install
+npm run dev
+```
+
+Buka `http://localhost:5173` di browser. Navigasi ke produk manapun untuk melihat halaman detail dengan interaksi lengkap.
+
+---
+
+## Cara Menguji
+
+### Pengujian Manual
+
+| ID | Skenario | Langkah | Expected Result |
+|---|---|---|---|
+| TC-01 | Render halaman hardcoded | Buka `project-AI/index.html` | Data Essential Hoodie tampil; varian S dipilih aktif; subtotal = Rp289.000 |
+| TC-02 | Variant selection hardcoded | Klik varian M | Varian M menjadi aktif, S tidak aktif |
+| TC-03 | Quantity change & subtotal | Tambah quantity ke 2 | Subtotal berubah menjadi Rp578.000 |
+| TC-04 | Validasi qty 0 | Kurangi ke batas minimum | Tombol `−` disabled; tidak bisa ke 0 |
+| TC-05 | Validasi qty > stok | Set qty melebihi stok (12) | Tombol `+` disabled di angka 12 |
+| TC-06 | Add to cart valid | Qty=2, klik Tambah ke tas | Toast muncul; cart counter bertambah 2 |
+| TC-07 | Loading state API | Jalankan server, buka halaman detail di `frontend/` | "Memuat produk…" tampil sesaat |
+| TC-08 | Success render API | Server aktif, produk tersedia | Data produk tampil; interaksi aktif |
+| TC-09 | Variant selection API | Klik variasi berbeda | Variasi aktif berubah; subtotal diperbarui |
+| TC-10 | Add to cart API | Qty valid, klik tambah | Feedback muncul; cart counter bertambah |
+| TC-11 | Error state — server mati | Matikan server, buka halaman detail | Loading hilang; error state tampil; tombol Retry muncul |
+| TC-12 | Retry tanpa duplikasi | Dari error, aktifkan server, klik Retry | Hanya 1 request dikirim; data ter-render normal |
+
+### Automated Test
+
+```bash
+# Backend unit test
+cd api-product && npm run test:unit
+
+# Backend integration test (butuh Docker)
+cd api-product && npm run test:integration
+
+# Frontend test
+cd project-AI/frontend && npm test
+```
+
+---
+
+## Catatan Penggunaan AI
+
+**Semua output AI ditinjau** bantuan AI hanya untuk berdiskusi, apapun outputnya tetap di crosscheck sebelum digunakan. Keputusan dan finishing tetap dilakukan secara manual.

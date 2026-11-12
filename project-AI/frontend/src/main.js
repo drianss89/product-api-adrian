@@ -1,4 +1,5 @@
 import './styles.css';
+import { add } from 'lodash';
 import { productApi } from './api/products.js';
 import { errorMessage, fieldErrors, formatPrice, validateProductInput } from './lib/product.js';
 
@@ -55,6 +56,122 @@ async function renderList() {
   }
 }
 
+function mountDetailInteractions(product) {
+  const money = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 });
+  const maxQty = product.variants.quantity;
+  let qty = 1;
+  let activeVariant = product.variants.colorOrSize[0] ?? '';
+  let bagItems = 0;
+  let toastTimer;
+
+  const qtyOutput = document.querySelector('#detail-qty');
+  const qtyMinus = document.querySelector('#detail-qty-minus');
+  const qtyPlus = document.querySelector('#detail-qty-plus');
+  const subtotalEl = document.querySelector('#detail-subtotal');
+  const validationEl = document.querySelector('#detail-validation');
+  const addBtn = document.querySelector('#detail-add');
+  const cartCount = document.querySelector('#detail-cart-count');
+  const feedbackEl = document.querySelector('#detail-feedback');
+
+  function validateQty(val) {
+    const num = Number(val);
+    if (!Number.isFinite(num) || !Number.isInteger(num)) return "Jumlah harus berupa bilangan bulat.";
+    if (num < 1) return "Jumlah harus minimal 1.";
+    if (num > maxQty) return "Jumlah melebihi stok (" + maxQty + ").";
+    return null;
+  }
+
+  function updateSubtotal() {
+    subtotalEl.textContent = "Subtotal: " + money.format(product.price * qty);
+  }
+
+  function clearValidation() {
+    validationEl.textContent = "";
+  }
+
+  function setQty(next) {
+    qty = Math.min(maxQty, Math.max(1, next));
+    qtyOutput.textContent = qty;
+    qtyMinus.disabled = qty === 1;
+    qtyPlus.disabled = qty === maxQty;
+    updateSubtotal();
+    clearValidation();
+  }
+
+  function selectVariant(variant) {
+    activeVariant = variant;
+    document.querySelectorAll('#detail-chips li[data-variant]').forEach((el) => {
+      const active = el.dataset.variant === variant;
+      el.classList.toggle('is-active-chip', active);
+      el.setAttribute('aria-pressed', String(active));
+    });
+    updateSubtotal();
+  }
+
+  document.querySelectorAll('#detail-chips li[data-variant]').forEach((el) => {
+    el.addEventListener('click', () => selectVariant(el.dataset.variant));
+    el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); selectVariant(el.dataset.variant); } });
+  });
+
+  qtyMinus.addEventListener('click', () => setQty(qty - 1));
+  qtyPlus.addEventListener('click', () => setQty(qty + 1));
+
+  addBtn.addEventListener('click', () => {
+    const error = validateQty(qty);
+    if (error) {
+      validationEl.textContent = error;
+      return;
+    }
+    clearValidation();
+    bagItems = add(bagItems, qty);
+    cartCount.textContent = bagItems;
+    feedbackEl.textContent = qty + " " + product.name + " (" + activeVariant + ") ditambahkan ke keranjang";
+    feedbackEl.classList.add('is-visible');
+    window.clearTimeout(toastTimer);
+    toastTimer = window.setTimeout(() => { feedbackEl.classList.remove('is-visible'); }, 2600);
+  });
+
+  if (maxQty > 0) setQty(1);
+}
+
+function detailMarkup(product) {
+  const money = new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 });
+  const hasStock = product.variants.quantity > 0;
+  const stockLabel = hasStock ? `${product.variants.quantity} tersedia` : '<span class="out-of-stock">Stok habis</span>';
+  const chips = product.variants.colorOrSize.map((v, i) =>
+    `<li class="chip${i === 0 ? ' is-active-chip' : ''}" data-variant="${escapeHtml(v)}" role="button" tabindex="0" aria-pressed="${i === 0}">${escapeHtml(v)}</li>`
+  ).join('');
+
+  return `<article class="product-detail">
+    <div>${productImage(product)}</div>
+    <div>
+      <a class="back" href="#/products">← Semua produk</a>
+      <h1>${escapeHtml(product.name)}</h1>
+      <p class="price">${money.format(product.price)}</p>
+      <p class="stock">Stok: ${stockLabel}</p>
+      <h2>Variasi</h2>
+      <ul class="chips" id="detail-chips">${chips}</ul>
+      <h2>Jumlah</h2>
+      <div class="qty-row">
+        <button class="qty-btn" id="detail-qty-minus" type="button" aria-label="Kurangi jumlah" ${!hasStock ? 'disabled' : ''}>−</button>
+        <output id="detail-qty" aria-live="polite">${hasStock ? 1 : 0}</output>
+        <button class="qty-btn" id="detail-qty-plus" type="button" aria-label="Tambah jumlah" ${!hasStock ? 'disabled' : ''}>+</button>
+      </div>
+      <p class="subtotal-line" id="detail-subtotal" aria-live="polite">${hasStock ? 'Subtotal: ' + money.format(product.price) : ''}</p>
+      <p class="validation-line" id="detail-validation" role="alert" aria-live="assertive"></p>
+      <div class="actions">
+        <button class="button" id="detail-add" type="button" ${!hasStock ? 'disabled' : ''}>Tambah ke keranjang</button>
+        <span class="cart-badge">Keranjang: <strong id="detail-cart-count">0</strong></span>
+        <a class="button secondary" href="#/products/${product.id}/edit">Ubah</a>
+        <button class="button danger" type="button" data-delete="${product.id}" data-name="${escapeHtml(product.name)}">Hapus</button>
+      </div>
+      <p class="feedback-toast" id="detail-feedback" role="status" aria-live="polite"></p>
+      <h2>Deskripsi</h2>
+      <p class="description">${escapeHtml(product.description)}</p>
+    </div>
+  </article>`;
+}
+
 async function renderDetail(id) {
   if (!/^\d+$/.test(id) || Number(id) < 1) {
     layout(errorState({ status: 400, problem: { type: 'https://api.example.com/problems/invalid-product-id' } }, { back: true }));
@@ -65,9 +182,9 @@ async function renderDetail(id) {
   try {
     const product = await productApi.get(id, { signal: cancelPreviousRequest() });
     if (route() !== `/products/${id}`) return;
-    const stock = product.variants.quantity === 0 ? '<span class="out-of-stock">Stok habis</span>' : `${product.variants.quantity} tersedia`;
-    layout(`<article class="product-detail"><div>${productImage(product)}</div><div><a class="back" href="#/products">← Semua produk</a><h1>${escapeHtml(product.name)}</h1><p class="price">${formatPrice(product.price)}</p><h2>Variasi</h2><ul class="chips">${product.variants.colorOrSize.map((variant) => `<li>${escapeHtml(variant)}</li>`).join('')}</ul><p class="stock">Stok: ${stock}</p><h2>Deskripsi</h2><p class="description">${escapeHtml(product.description)}</p><div class="actions"><a class="button" href="#/products/${product.id}/edit">Ubah</a><button class="button danger" type="button" data-delete="${product.id}" data-name="${escapeHtml(product.name)}">Hapus</button></div></div></article>`);
+    layout(detailMarkup(product));
     installImageFallback();
+    mountDetailInteractions(product);
     document.querySelector('[data-delete]').addEventListener('click', () => confirmDelete(product));
   } catch (error) {
     if (error.name !== 'AbortError') {
@@ -142,7 +259,7 @@ function confirmDelete(product) {
   dialog.showModal();
 }
 
-function bindRetry(callback) { document.querySelector('[data-retry]')?.addEventListener('click', callback); }
+function bindRetry(callback) { document.querySelector('[data-retry]')?.addEventListener('click', callback, { once: true }); }
 
 function renderRoute() {
   const current = route();
